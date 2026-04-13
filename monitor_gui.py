@@ -3,9 +3,11 @@ import threading
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, ttk
 
+
+
 # ===== إعدادات Serial =====
 PORT = "/dev/ttyUSB0"
-BAUDRATE = 115200   # ⚠️ لازم يطابق MCU
+BAUDRATE = 115200 
 
 try:
     ser = serial.Serial(PORT, BAUDRATE, timeout=0.1)
@@ -24,17 +26,20 @@ notebook = ttk.Notebook(root)
 notebook.pack(expand=True, fill='both')
 
 # --- Monitor Tab ---
-tab_monitor = ttk.Frame(notebook)
-notebook.add(tab_monitor, text="Monitor")
-
-text_area = scrolledtext.ScrolledText(
+def monitorTab (notebook) :
+    tab_monitor = ttk.Frame(notebook)
+    text_area = scrolledtext.ScrolledText(
     tab_monitor,
     width=80,
     height=20,
     state='disabled',
-    font=("Courier", 10)
-)
-text_area.pack(padx=10, pady=10, expand=True, fill='both')
+    font=("Courier", 10))
+    text_area.pack(padx=10, pady=10, expand=True, fill='both')
+    return tab_monitor
+
+notebook.add(monitorTab(notebook), text="Monitor")
+
+
 
 # --- Registers Tab ---
 tab_registers = ttk.Frame(notebook)
