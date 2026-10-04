@@ -1,58 +1,80 @@
-# Fake Drivers – Virtual I/O & Register Injection Layer for MCUs
+# VCM Firmware - Virtual Components for Microcontrollers
 
-## 📌 Overview
+## Overview
 
-**Fake Drivers** is a middleware layer that runs on top of the MCU, designed to simulate hardware devices and enable real-time interaction with MCU registers — **without modifying the original firmware**.
+**VCM (Virtual Components for Microcontrollers)** is a lightweight middleware layer for microcontrollers that enables firmware to interact with virtualized hardware components through a PC.
 
-> 🚨 The PC is **NOT a controller**.
-> It acts only as a **sensor/monitor**, meaning any data sent from the PC is treated strictly as **register value updates**.
+VCM allows embedded firmware to be tested and developed with virtual inputs and simulated components while keeping the application logic on the microcontroller.
 
----
+> **The MCU owns the application logic.**
+> **The PC provides virtual component data and monitors the MCU state.**
 
-## 🎯 Current Scope
+The goal is to make embedded firmware testable without requiring every physical component during development.
 
-🚧 This repository currently implements:
 
-* ✅ FakeLayer (MCU Middleware)
-* ❌ GUI (planned, external)
-* ❌ Full device simulation (future work)
+## Current Scope
+
+This repository contains the **firmware-side implementation of VCM**.
+
+* VCM middleware
+* Register map
+* Communication protocol
+* MCU ↔ PC communication
+* Register validation
+* Additional virtual components
+* GUI — maintained separately in [`vcm-gui`](../vcm-gui)
 
 ---
 
 ## 🧩 Architecture
 
+```text
+                 PC
+                  │
+        Virtual Components
+                  │
+                  ▼
+          ┌───────────────┐
+          │   VCM Layer   │
+          │               │
+          │ Protocol      │
+          │ Register Map  │
+          │ Validation    │
+          └───────┬───────┘
+                  │
+                  ▼
+          Original Firmware
+                  │
+                  ▼
+             MCU Hardware
 ```
-PC (Sensor/Monitor)
-        │
-        ▼
-FakeLayer (Middleware on MCU)
-        │
-        ▼
-Map Registers (Validated State)
-        │
-        ▼
-Original Firmware (Unmodified)
-```
 
----
+VCM sits between the communication layer and the application firmware.
 
-## ⚙️ How It Works
+The application firmware remains responsible for its own logic and behavior.
 
-The FakeLayer operates inside the MCU main loop:
+
+## How It Works
+
+VCM operates alongside the normal MCU firmware loop.
 
 ```cpp
 void loop() {
-    readPcFromPC();           // Apply register updates from PC
-    yourFirmware();           // Original firmware logic (unchanged)
-    sendMapRegistersToPc();   // Send full state to PC
+    vcm.processIncoming();       // Process virtual component data
+    yourFirmware();              // Application firmware logic
+    vcm.sendRegisters();         // Send MCU state to the PC
 }
 ```
 
+VCM does not replace the application's logic.
+
+Instead, it provides a bridge between virtual components and the firmware's I/O state.
+
 ---
 
-## 🧱 Core Concept: Map Registers
+## 🧱 Core Concept: Register Map
 
-All interactions are done through a structured register map.
+VCM represents MCU I/O through a structured register map.
 
 ```cpp
 enum RegisterType : uint8_t {
@@ -63,135 +85,150 @@ enum RegisterType : uint8_t {
     PWM_OUTPUT,
     SPECIAL_FUNCTION
 };
+```
 
+Each register describes an I/O value and its properties.
+
+```cpp
 struct Register {
     uint8_t pinID;
     uint16_t value;
-    bool isInput;
     RegisterType type;
     uint16_t minValue;
     uint16_t maxValue;
 };
 ```
 
-### ✨ Purpose
+### Purpose
 
-* Represent all MCU I/O in one unified structure
-* Allow batch communication with PC
-* Validate all incoming data (min/max, type, access)
-* Keep firmware fully isolated from simulation logic
+The register map provides:
+
+* A unified representation of MCU I/O
+* Structured communication with the PC
+* Value validation
+* Type information
+* Support for batch updates
+* A clear boundary between VCM and application firmware
 
 ---
 
-## 🔁 Data Flow
+## Data Flow
 
 ### PC → MCU
 
-* Sends **register updates only**
-* No commands, no control logic
+The PC can provide values representing virtual component states.
+
+For example:
+
+```text
+Virtual Button
+      │
+      ▼
+   GUI / PC
+      │
+      ▼
+ REG_UPDATE
+      │
+      ▼
+    VCM
+      │
+      ▼
+ Register Map
+      │
+      ▼
+ Application Firmware
+```
+
+The MCU validates incoming values before applying them.
+
+---
 
 ### MCU → PC
 
-* Sends full **Map Registers batch**
-* Used for monitoring and visualization
+The MCU periodically publishes its current register state.
 
----
-
-## 📡 Communication Protocol
-
-### Message Types
-
-| Type       | Direction | Description              |
-| ---------- | --------- | ------------------------ |
-| REG_UPDATE | PC → MCU  | Update register values   |
-| REG_BATCH  | MCU → PC  | Send all register states |
-| ACK        | MCU → PC  | Acknowledge valid update |
-| NAK        | MCU → PC  | Reject invalid update    |
-
----
-
-### REG_UPDATE
-
-```
-[START][TYPE][NUM][DATA...][CHECKSUM]
+```text
+Application Firmware
+        │
+        ▼
+   Register Map
+        │
+        ▼
+    REG_BATCH
+        │
+        ▼
+       PC
+        │
+        ▼
+ GUI / Monitoring
 ```
 
-```cpp
-struct RegUpdate {
-    uint8_t pinID;
-    uint16_t value;
-};
-```
+This allows the PC to observe the behavior of the firmware in real time.
 
----
 
-### REG_BATCH
+## Design Principles
 
-```cpp
-struct RegFull {
-    uint8_t pinID;
-    uint16_t value;
-    uint8_t type;
-    bool isInput;
-    uint16_t minValue;
-    uint16_t maxValue;
-};
-```
+### MCU Owns the Logic
 
----
+VCM does not move application logic to the PC.
 
-## 🔒 Safety Rules
+The firmware remains responsible for:
 
-* ❗ PC cannot execute logic
-* ❗ PC cannot send commands
-* ✅ All values are validated before applying
-* ✅ Firmware always reads trusted data
+* State transitions
+* Control logic
+* Timing
+* Decision making
+* Hardware behavior
 
----
+### PC Provides Virtual Components
 
-## 🚀 Why FakeLayer?
+The PC can represent components such as:
 
-* Test firmware **without hardware**
-* Simulate sensors and devices easily
-* Debug register-level behavior in real time
-* No need to re-flash firmware for testing
-* Decoupled architecture (GUI optional)
+* Buttons
+* Switches
+* Sensors
+* Analog inputs
+* Other virtual inputs
 
----
+The GUI communicates these values to VCM rather than directly controlling the application.
 
-## 🛠️ Current Status
+## Why VCM?
 
-* 🟢 Register Map implemented
-* 🟢 Protocol structure defined
-* 🟡 Serial communication (in progress)
-* 🔴 GUI simulator (not started)
+VCM is designed to make embedded development easier by reducing the dependency on physical hardware during development and testing.
 
----
+### Benefits
 
-## 📦 Future Work
+* Test firmware without connecting every physical component
+* Simulate sensors and inputs
+* Observe MCU state in real time
+* Reduce hardware dependency during development
+* Test firmware behavior repeatedly
+* Keep application logic on the MCU
+* Separate virtual components from firmware logic
+* Provide a consistent communication layer
 
-* External GUI (device simulation)
-* Plugin system for components (TFT, buttons, sensors)
-* Advanced validation (timing, dependencies)
-* Multi-MCU support
-* Logging & debugging tools
+## Future Work
+Build a GUI system that makes creating and configuring custom virtual components easy.
 
----
 
-## 🤝 Contributing
+## Contributing
 
-This project is intended to become an open-source platform for embedded system simulation.
+VCM is intended to become an open-source platform for developing and testing embedded firmware with virtual hardware components.
 
-Contributions are welcome in:
+Contributions are welcome in areas such as:
 
 * Protocol improvements
+* Firmware architecture
 * Performance optimization
-* GUI development
-* Device simulation modules
+* New virtual component types
+* Communication transports
+* Testing
+* Documentation
 
 ---
 
-## 🧠 Philosophy
+## Philosophy
 
-> The MCU owns the logic.
-> The PC only reflects reality.
+> **The MCU owns the logic.**
+> **VCM connects the firmware to virtual components.**
+> **The PC provides the environment.**
