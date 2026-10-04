@@ -1,25 +1,38 @@
+#include "esp32-hal-gpio.h"
 #include <Arduino.h>
-#include "FakeConnection.h"
 
-const int NUM_REGISTERS = 2;
+#include <Vcm.h>
 
-std::vector<fake::Register> initialRegisters = {
-    {1, 100, true, fake::RegisterType::DIGITAL_INPUT, 0, 255},
-    {2, 50, false, fake::RegisterType::ANALOG_OUTPUT, 0, 1023}};
+using namespace vcm;
 
-fake::FakeConnection *fake; // مؤشر
+Vcm _vcm;
 
-void setup()
-{
-    Serial.begin(115200);
+constexpr uint8_t LED_PIN = 2;
 
-    fake = new fake::FakeConnection(NUM_REGISTERS, initialRegisters);
+McuRegisterProvider::RegisterMap mcuRegisters = {
+    {LED_PIN,
+     {
+         LED_PIN,
+         GPIO_OUT_REG,
+         (1UL << LED_PIN),
+         RegisterType::DIGITAL_OUTPUT,
+         0,
+         1,
+     }},
+};
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(LED_PIN, OUTPUT);
+
+  _vcm.initMapRegister(mcuRegisters);
 }
 
-void loop()
-{
-    fake->sendMapRegisters();
-    
-    fake->readMapRegisters();
-    delay(100);
+void loop() {
+  _vcm.processIncoming();
+
+  // Firmware logic
+
+  _vcm.sendRegisters();
 }
